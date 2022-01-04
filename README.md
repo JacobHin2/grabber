@@ -24,9 +24,9 @@ Already works on Linux and I am testing it on Windows, it can log to anywhere yo
 - `HOOK_URL`: a Discord webhook URL, encoded in url-safe base64. (you don't need this if you implement your own logging mechanism in `lib.rs`)
 - `GET_SENTENCES`:  Whether to ignore typed characters when a space is encountered. Set this to false to have better luck logging passwords.
 
-### Bugs
+### Bugs and Feature Requests
 
-If you encounter bugs:
+If you encounter bugs/ you want features:
 
 - Leave an issue
 - DM me on discord: smiley#5012
